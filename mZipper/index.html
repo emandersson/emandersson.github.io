@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<meta name='viewport' id='viewportMy' content='initial-scale=1'/>
+
+
+<meta name="description" content="Tool for reading/creating mZip (archive) files,"/>
+<meta name="keywords" content="mZipper archive-tool"/>
+<link rel="icon" type="image/png" href="lib/image/Icon/iconRed16.png" />
+<link rel="stylesheet" href="stylesheets/style.css" type="text/css">
+
+<script src="lib/foundOnTheInternet/jquery-2.1.4.min.js"></script>
+<script src="bower_components/pako/dist/pako.js"></script>
+<script src="lib/foundOnTheInternet/zip.js"></script>
+<script src="lib/foundOnTheInternet/sha1.js"></script>
+<script src="lib/foundOnTheInternet/sjcl.js"></script>
+<script src="lib.js"></script>
+<script src="libClient.js"></script>
+
+<script type="text/javascript">
+  // python -m http.server 8000
+(function(){
+
+messExtend=function($el){
+"use strict"
+  $el.resetMess=function(time){ 
+    if(typeof time =='number')     messTimer=setTimeout('resetMess()',time*1000);
+    else {$el.html(''); clearTimeout(messTimer);} 
+  }
+  $el.setMess=function(str,time,boRot){  
+    $el.show();
+    $el.html(str);  clearTimeout(messTimer); 
+    if(typeof time=='number' && time>0)     messTimer=setTimeout('resetMess()',time*1000);
+    if(boRot) $el.append($imgBusy);
+  };
+  var messTimer;
+  //$el.addClass('message').css({'z-index':8100,position:'fixed'}); 
+  $el.css({border:'black 1px solid',bottom:'0%',right:'0%',margin:'0',padding:'1px','background-color':'#F7F700','font-size':'0.8em','z-index':18100,position:'fixed'}); 
+  $el.click(function(){$el.hide();});
+  return $el;
+}
+
+
+var encoder=new TextEncoder('utf8');
+var decoder=new TextDecoder('utf8');
+var regTxt=RegExp('^(.*)\\.txt$');
+
+//StrSerializationFormat=["json"];
+//IntSerializationFormat=array_flip(StrSerializationFormat);
+ObjSerializationFormat={json:0};
+IntSerializationFormat=Object.values(ObjSerializationFormat);
+
+createDivExtend=function($el){
+  "use strict"
+  var inpSelChange=function*(){  
+    $ul.empty().show();
+    var  arrUint8File=[]; // An array where each element contains an Uint8Array.
+    arrUint8Wr.length=0;  
+    var arrOrg=this.files, nOrg=arrOrg.length, sumFile=0;
+    var objMeta={}; objMeta.IStart=Array(nOrg); objMeta.StrName=Array(nOrg); objMeta.IntCompMethod=Array(nOrg); objMeta.IntTMod=Array(nOrg); objMeta.IntSize=Array(nOrg); objMeta.IntCompSize=Array(nOrg); objMeta.StrSha1=Array(nOrg);  //objMeta.StrSha256=Array(nOrg);
+    
+    var arrUint8Head=[encoder.encode("mZip"), encodeAsBE(2, 1), encodeAsBE(1, ObjSerializationFormat.json), encodeAsBE(8, 0)];   // strMZipID, intVersion, intSizeArchive
+    var lenHead=0; for(var i=0;i<arrUint8Head.length;i++) lenHead+=arrUint8Head[i].length;
+    
+    for(var i=0;i<nOrg;i++){
+      var blob=arrOrg[i];
+      var strName=blob.name, date=new Date(blob.lastModified), size=blob.size;
+      var boCompress=regTxt.test(strName);
+      var $li=$('<li>').append(date+',  '+size+',  '+strName );
+      $ul.append($li); 
+
+      var semCB=0, semY=0, abTmp, reader = new FileReader();
+      reader.addEventListener("loadend", function() {
+        abTmp=reader.result;
+        if(semY) { iterator.next(); } semCB=1;
+      });
+      //reader.readAsText(blob);
+      reader.readAsArrayBuffer(blob);
+      if(!semCB) { semY=1; yield;}
+      //var strSha1=SHA1(abTmp);
+      var strTmp=decoder.decode(abTmp);
+      //var out=sjcl.hash.sha256.hash(strTmp), strSha256=sjcl.codec.hex.fromBits(out);
+      var strSha1=SHA1(strTmp);
+      var Uint8FileT;
+      if(boCompress){
+        Uint8FileT= pako.deflate(abTmp);
+      }else {
+        Uint8FileT= new Uint8Array(abTmp);
+      }
+      arrUint8File=arrUint8File.concat(Uint8FileT);
+      var iStart=lenHead+sumFile;
+      objMeta.IStart[i]=iStart; objMeta.StrName[i]=strName; objMeta.IntCompMethod[i]=boCompress?1:0; objMeta.IntTMod[i]=Math.round(blob.lastModified/1000); objMeta.IntSize[i]=blob.size; objMeta.IntCompSize[i]=Uint8FileT.length; objMeta.StrSha1[i]=strSha1; //objMeta.StrSha256[i]=strSha256;
+      sumFile+=Uint8FileT.length;
+    } 
+    var Uint8IMeta=encodeAsBE(8, lenHead+sumFile);
+    var Uint8ObjMeta=encoder.encode(JSON.stringify(objMeta));
+    arrUint8Wr=[].concat(arrUint8Head, arrUint8File, Uint8ObjMeta, Uint8IMeta);
+
+  }
+
+  var saveButtonClick=function*(event) {
+    var link=document.createElement("a");
+    link.download='abc.mzip';
+    link.href=window.URL.createObjectURL(new Blob(arrUint8Wr)); // , {type: 'text/csv'}
+    document.body.appendChild(link);  link.click();    document.body.removeChild(link);
+
+    event.preventDefault();
+    return false;
+  }
+
+  var arrUint8Wr=[];
+
+  var $imgHHead=$imgHelp.clone().css({'margin-left':'1em'}); popupHoverM($imgHHead,$('<div>').html('<p>Create mZip file.'));
+  var $head=$('<div>').append('Create mZip file',$imgHHead).css({'font-weight':'bold'});
+
+  var $inpFile=$('<input name="file" type="file" multiple>').css({background:'lightgrey'});
+  var $progress=$('<progress max=100, value=0>').hide();
+  var $saveButton=$('<button>').text('Save to disk').click(function(event) {
+    iterator=saveButtonClick.call(this,event);  iterator.next();
+  });
+  var $ul=$('<ul>');
+
+  $el.append($head, $inpFile, $progress, $ul, $saveButton);
+
+  $inpFile.change(function(e) {
+    iterator=inpSelChange.call(this,e);  iterator.next();
+    //inpSelChange.call(this,e);
+  });
+
+  return $el;
+}
+
+var getMeta=function*(fileMZip){  
+      // check filetype
+  var blob=fileMZip.slice(0,4);
+  var semCB=0, semY=0, abTmp, reader = new FileReader();
+  reader.addEventListener("loadend", function() {
+    abTmp=reader.result;
+    if(semY) { iterator.next(); } semCB=1;
+  });
+  reader.readAsText(blob);
+  if(!semCB) { semY=1; yield;}
+  if(abTmp!='mZip') {setMess('ID field is not "mZip"',10); return false; }
+
+      // intSerializationFormat
+  var blob=fileMZip.slice(6,7);
+  var semCB=0, semY=0, abTmp, reader = new FileReader();
+  reader.addEventListener("loadend", function() {
+    abTmp=reader.result;
+    if(semY) { iterator.next(); } semCB=1;
+  });
+  reader.readAsArrayBuffer(blob);
+  if(!semCB) { semY=1; yield;}
+  var arrBuff=new Uint8Array(abTmp);
+  var intSerializationFormat=readAsBE(arrBuff,0,1);
+  if(IntSerializationFormat.indexOf(intSerializationFormat)==-1) {alert("intSerializationFormat (="+intSerializationFormat+") is not supported"); return; }
+
+      // iMeta
+  var blob=fileMZip.slice(-8);
+  var semCB=0, semY=0, abTmp, reader = new FileReader();
+  reader.addEventListener("loadend", function() {
+    abTmp=reader.result;
+    if(semY) { iterator.next(); } semCB=1;
+  });
+  reader.readAsArrayBuffer(blob);
+  if(!semCB) { semY=1; yield;}
+  var arrBuff=new Uint8Array(abTmp);
+  var iMeta=readAsBE(arrBuff,0,8);
+
+
+     // objMeta
+  var blob=fileMZip.slice(iMeta,-8);
+  var semCB=0, semY=0, abTmp, reader = new FileReader();
+  reader.addEventListener("loadend", function() {
+    abTmp=reader.result;
+    if(semY) { iterator.next(); } semCB=1;
+  });
+  reader.readAsArrayBuffer(blob);
+  if(!semCB) { semY=1; yield;}
+  var arrBuff=new Uint8Array(abTmp);
+  var strMeta=decoder.decode(arrBuff);
+  var objMeta=JSON.parse(strMeta);
+  return objMeta;
+}
+
+zipDivExtend=function($el){ // For converting mZip to zip
+  "use strict"
+  var inpSelChange=function*(){  
+    $ul.empty().show();
+    fileMZip=this.files[0]; 
+    objMeta=yield* getMeta(fileMZip);
+    var boOK=Boolean(objMeta);
+    $saveZipButton.toggle(boOK);
+  }
+  var onerror=function(message) {debugger
+    alert(message);
+  }
+  var createNSaveZip=function*(event) {
+    var writer = new zip.BlobWriter(); 
+
+    var semCB=0, semY=0;
+    zip.createWriter(writer, function(writerT) {
+      zipWriter = writerT;
+      if(semY) { iterator.next(); } semCB=1;
+    }, onerror);
+    if(!semCB) { semY=1; yield;}
+
+
+    var nFile=objMeta.IStart.length;
+    for(var i=0;i<nFile;i++){
+      var iStart=objMeta.IStart[i], strName=objMeta.StrName[i], intCompMethod=objMeta.IntCompMethod[i], intTMod=objMeta.IntTMod[i], intSize=objMeta.IntSize[i], intCompSize=objMeta.IntCompSize[i], strSha1=objMeta.StrSha1[i];   //,   strSha256=objMeta.StrSha256[i];
+
+      var blob=fileMZip.slice(iStart,iStart+intCompSize);
+
+      if(objMeta.IntCompMethod[i]==1){
+        var semCB=0, semY=0, abTmp, reader = new FileReader();
+        reader.addEventListener("loadend", function() {
+          abTmp=reader.result;
+          if(semY) { iterator.next(); } semCB=1;
+        });
+        reader.readAsArrayBuffer(blob);
+        if(!semCB) { semY=1; yield;}
+
+        var arrBuffTmp=new Uint8Array(abTmp);
+        try {
+          var result = pako.inflate(arrBuffTmp, { to: 'string' });
+        } catch (err) {
+          console.log(err);
+        }
+        blob=new Blob([result]);  // , {type: 'text/plain'}
+      }
+
+
+      var semCB=0, semY=0;
+      zipWriter.add(strName, new zip.BlobReader(blob), function() {
+        if(semY) { iterator.next(); } semCB=1;
+      }, onprogress,  {lastModDate:new Date(intTMod*1000)});
+      if(!semCB) { semY=1; yield;}
+    }
+
+
+
+    var semCB=0, semY=0, blob;
+    zipWriter.close(function(blobT) {
+      blob=blobT;
+      if(semY) { iterator.next(); } semCB=1;
+    });
+    if(!semCB) { semY=1; yield;}
+    var url=URL.createObjectURL(blob);
+
+
+    var link=document.createElement("a");
+    link.download='abc.zip';
+    link.href=url;    //window.URL.createObjectURL(new Blob(['Test',strTextComp,'Text'], {type: 'text/csv'}));
+    document.body.appendChild(link);  link.click();    document.body.removeChild(link);
+
+    event.preventDefault();
+    return false;
+  }
+
+  var zipWriter;
+  var fileMZip, objMeta; 
+
+  var $imgHHead=$imgHelp.clone().css({'margin-left':'1em'}); popupHoverM($imgHHead,$('<div>').html('<p>Convert mZip to zip.'));
+  var $head=$('<div>').append('Convert mZip to zip').css({'font-weight':'bold'});
+
+  var $inpFile=$('<input type="file" >').css({background:'lightgrey'});  // name="file"
+  var $progress=$('<progress max=100, value=0>').hide();
+  var $saveZipButton=$('<button>').text('Create and save as zip').click(function(event) {
+    iterator=createNSaveZip.call(this,event);  iterator.next();
+  }).hide();
+  var $ul=$('<ul>');
+
+  $el.append($head, $inpFile, $progress, $saveZipButton, $ul);  //, $saveButton
+
+  $inpFile.change(function(e) {
+    iterator=inpSelChange.call(this,e);  iterator.next();
+    //inpSelChange.call(this,e);
+  });
+
+  return $el;
+}
+
+readDivExtend=function($el){ // For extracting single files
+  "use strict"
+  var download=function*(){  
+    var ind=this.indMy;
+    var iStart=objMeta.IStart[ind], intCompMethod=objMeta.IntCompMethod[ind], intCompSize=objMeta.IntCompSize[ind];
+    var blob=fileMZip.slice(iStart,iStart+intCompSize);
+
+    if(objMeta.IntCompMethod[ind]==1){
+      var semCB=0, semY=0, abTmp, reader = new FileReader();
+      reader.addEventListener("loadend", function() {
+        abTmp=reader.result;
+        if(semY) { iterator.next(); } semCB=1;
+      });
+      reader.readAsArrayBuffer(blob);
+      if(!semCB) { semY=1; yield;}
+
+      var arrBuffTmp=new Uint8Array(abTmp);
+      try {
+        var result = pako.inflate(arrBuffTmp, { to: 'string' });
+      } catch (err) {
+        console.log(err);
+      }
+      blob=new Blob([result]);  // , {type: 'text/plain'}
+    }
+    var clickEvent = document.createEvent("MouseEvent");
+    clickEvent.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+    this.href=URL.createObjectURL(blob);
+    this.download=objMeta.StrName[ind];
+    this.dispatchEvent(clickEvent);
+
+  }
+
+  var inpSelChange=function*(){  
+    $ul.empty().show();
+    fileMZip=this.files[0]; 
+
+    objMeta=yield* getMeta(fileMZip);
+    if(!objMeta) return;
+
+    var nFile=objMeta.IStart.length;
+    for(var i=0;i<nFile;i++){
+
+      var li = document.createElement("li");
+      var a = document.createElement("a");
+      a.textContent = objMeta.StrName[i];
+      a.indMy=i;
+      a.href = "#";
+      a.addEventListener("click", function(event) {
+        if (!this.download) {
+          iterator=download.call(this);  iterator.next();
+          event.preventDefault();
+          return false;
+        }
+      }, false);
+      li.appendChild(a);
+      $ul[0].appendChild(li);
+      //$ul.append($(li));
+    }
+  }
+ 
+  var fileMZip, objMeta; 
+
+  var $imgHHead=$imgHelp.clone().css({'margin-left':'1em'}); popupHoverM($imgHHead,$('<div>').html('<p>Extract individual files from mZip archive.'));
+  var $head=$('<div>').append('Extract individual files', $imgHHead).css({'font-weight':'bold'});
+
+  var $inpFile=$('<input type="file" >').css({background:'lightgrey'});  // name="file"
+  var $progress=$('<progress max=100, value=0>').hide();
+  var $ul=$('<ul>');
+
+  $el.append($head, $inpFile, $progress, $ul);  //, $saveButton
+
+  $inpFile.change(function(e) {
+    iterator=inpSelChange.call(this,e);  iterator.next();
+  });
+
+  return $el;
+}
+
+
+readAsBE=function(arr,start,n){  // read as n bytes as big endian
+  var len=arr.length;
+  if(start<0) start=len+start; var end=start+n;
+  var count = 0;
+  for(var i=start; i<end; i++) {     count=(count<<8)+arr[i];    }
+  return count;
+}
+writeAsBE=function(arr, start, n, num){
+  var len=arr.length;
+  if(start<0) start=len+start; var end=start+n;
+  for(var i=end-1; i>=start; i--) {     arr[i]=num&0xff;  num=num>>8;   }
+}
+encodeAsBE=function(n, num){
+  var Uint8Tmp=new Uint8Array(n);
+  for(var i=n-1; i>=0; i--) {     Uint8Tmp[i]=num&0xff;  num=num>>8;   }
+  return Uint8Tmp;
+}
+
+setup1=function(){
+  /*var input = new Uint8Array();
+  var input='abcåäö';
+  var output = pako.deflate(input);
+  var compressed = new Uint8Array();
+  compressed=output;
+  try {
+    var result = pako.inflate(compressed, { to: 'string' });
+  } catch (err) {
+    console.log(err);
+  }*/
+
+  $body=$('body');  $html=$('html');
+  $body.css({margin:'0px'});
+  
+  boTouch = Boolean('ontouchstart' in document.documentElement);
+  browser=getBrowser();
+  var intBrowserVersion=parseInt(browser.version.slice(0, 2));
+
+  var ua=navigator.userAgent, uaLC = ua.toLowerCase(); //alert(ua);
+  boAndroid = uaLC.indexOf("android") > -1;
+  boFF = uaLC.indexOf("firefox") > -1; 
+  //boIE = uaLC.indexOf("msie") > -1; 
+  versionIE=detectIE();
+  boIE=versionIE>0; if(boIE) browser.brand='msie';
+
+  boChrome= /chrome/i.test(uaLC);
+  boIOS= /iPhone|iPad|iPod/i.test(uaLC);
+  boEpiphany=/epiphany/.test(uaLC);    if(boEpiphany && !boAndroid) boTouch=false;  // Ugly workaround
+
+  boOpera=RegExp('OPR\\/').test(ua); if(boOpera) boChrome=false; //alert(ua);
+
+
+
+
+  flFoundOnTheInternetFolder='lib/foundOnTheInternet';
+  uHelpFile='lib/image/help.png';
+  uBusy='lib/image/busy.gif';
+  uBusyLarge='lib/image/busyLarge.gif';
+  $imgHelp=$('<img>').prop({src:uHelpFile}).css({'vertical-align':'-0.4em'});
+
+  zip.workerScriptsPath = flFoundOnTheInternetFolder+'/';
+
+  $messageText=messExtend($("<span>"));  window.setMess=$messageText.setMess;  window.resetMess=$messageText.resetMess;   $body.append($messageText); 
+  
+  iterator=undefined;
+  $createDiv=createDivExtend($('<div>'));
+  $zipDiv=zipDivExtend($('<div>'));
+  $readDiv=readDivExtend($('<div>'));
+
+  
+  $body.append($createDiv, '<hr>', $zipDiv, '<hr>', $readDiv, $messageText);
+
+}
+
+
+
+//window.onload=function(){  setup1(); };
+$(function(){  setup1(); });
+
+})();
+
+
+
+</script>
+</head>
+<body style="margin:0">
+<title>mZipper</title>
+</body></html>

@@ -1,0 +1,40 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="GENERATOR" content="Mozilla/4.7 (Macintosh; I; PPC) [Netscape]">
+   <title> </title>
+</head>
+<body bgcolor="#FFFFFF">
+
+<center>
+<h2>
+Automatic Map-making of Adventure-pools</h2></center>
+
+<center>
+<h3>
+Erik Magnus Andersson</h3></center>
+
+<center>
+<h4>
+Abstract</h4></center>
+This project is about automatic mapping of irregular so called adventure
+type pools. It is a part of a larger project driven by the assigner, Weda,
+to develop a pool-cleaner robot for these kinds of pools. The robot shall
+be developed from the current line of pool-cleaners made for rectangular
+pools. Especially the robot shall be adapted to the B400 model which is
+the most widely sold pool-cleaner. The assigners project has been tending
+towards using map based positioning as a navigation method of the pool-cleaner.
+<p>The mapping algorithm uses a sonar sensor to make local map patches
+around the pool-cleaner, after which it makes use of a matching algorithm
+for matching map patches to each other. As the pool-cleaner is exploring
+the pool, local maps are obtained and then matched and merged to the current
+map so that eventually a global map is obtained. The exploring of the pool,
+i.e. deciding where the next scanning pose shall be, is done manually.
+<p>The sonar transducer is mounted on a stepper motor to be able to rotate
+one revolution and thereby make a polar local map-patch. The sonar is a
+standard recreational boat sonar, which has been modified by the manufacturer
+to fit this project. The mapping algorithm has been tested with good results
+in the pool at Weda and in a larger adventure pool in Fyrishov, Uppsala.
+</body>
+</html>
